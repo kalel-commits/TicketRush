@@ -3,7 +3,9 @@
 Flash-sale event ticketing: Java 21 + Spring Boot microservices that never sell a seat twice.
 Design: `docs/superpowers/specs/2026-11-01-ticketrush-design.md` · Plans: `docs/superpowers/plans/`.
 
-**Status:** Plan 1 (Foundation) and Plan 2 (Event service: catalog, seat map, cached reads, race-free idempotent seat holds, Kafka confirm/release) done.
+**Status:** Plans 1–9 are done: foundation, event, booking and payment services, reliability jobs, load tests, the AI assistant, the demo frontend, and the live flash-sale demo. Still open: the real-key assistant eval (needs `ANTHROPIC_API_KEY`) and load scenarios S4 and S5 (need more host memory). See the sections below for details.
+
+**Services:** `api-gateway` · `discovery-server` (Eureka) · `user-service` · `event-service` · `booking-service` · `payment-service` (with `fake-payment-provider`) · `ai-assistant` · `frontend` (React client). Shared code lives in `common/`.
 
 ## Prerequisites
 
