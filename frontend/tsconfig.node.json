@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "ES2022", "lib": ["ES2022", "DOM"], "module": "ESNext", "moduleResolution": "bundler",
+    "strict": true, "noUnusedLocals": true, "noUnusedParameters": true, "skipLibCheck": true,
+    "isolatedModules": true, "noEmit": true, "types": ["node"]
+  },
+  "include": ["vite.config.ts", "demo-harness", "src/demo/parse.ts", "src/demo/stats.ts", "src/demo/types.ts"]
+}

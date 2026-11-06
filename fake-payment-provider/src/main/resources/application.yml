@@ -1,0 +1,23 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: fake-payment-provider
+  threads:
+    virtual:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+# Behaviour knobs (spec §10), set through env in Compose.
+provider:
+  decline-rate: ${PROVIDER_DECLINE_RATE:0.0}
+  latency-ms: ${PROVIDER_LATENCY_MS:0}
+  timeout-after-charge-rate: ${PROVIDER_TIMEOUT_AFTER_CHARGE_RATE:0.0}
+  timeout-sleep-ms: ${PROVIDER_TIMEOUT_SLEEP_MS:5000}
+  down: ${PROVIDER_DOWN:false}

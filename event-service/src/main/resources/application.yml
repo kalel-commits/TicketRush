@@ -1,0 +1,73 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: event-service
+  threads:
+    virtual:
+      enabled: true
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:3306/event_db?connectionTimeZone=UTC
+    username: event_svc
+    password: ${EVENT_DB_PASSWORD:event-dev-password}
+    hikari:
+      maximum-pool-size: 10
+      # A hold must finish (or fail) well inside booking-service's 2 s read timeout, so it can never commit
+      # after the caller gave up: wait at most 1.5 s for a connection and 1 s for a row lock.
+      connection-timeout: 1500
+      connection-init-sql: SET SESSION innodb_lock_wait_timeout = 1
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate.jdbc.time_zone: UTC
+  flyway:
+    enabled: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+      timeout: 200ms
+  cache:
+    type: redis
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP:localhost:9092}
+    consumer:
+      group-id: event-service
+      auto-offset-reset: earliest
+      enable-auto-commit: false
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+    producer:
+      acks: all
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable.idempotence: true
+    listener:
+      ack-mode: record
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics   # metrics: reconciler.*, kafka.dlt.messages, breaker state (port not published)
+
+ticketrush:
+  jwt:
+    public-key: file:${JWT_PUBLIC_KEY_FILE:./infra/keys/public/jwt-public.pem}
+  internal-jwt-secret: ${INTERNAL_JWT_SECRET:dev-internal-secret-change-me-0123456789}
+  booking-service:
+    base-url: http://booking-service    # resolved through Eureka by the @LoadBalanced client
+  reconciler:
+    seat-interval-ms: 60000             # spec §12
+    seat-initial-delay-ms: 60000

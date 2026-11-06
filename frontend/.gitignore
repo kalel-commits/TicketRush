@@ -1,0 +1,7 @@
+node_modules/
+dist/
+test-results/
+playwright-report/
+
+# demo harness: random password of the local demo buyer accounts
+demo-harness/.state.json

@@ -1,0 +1,290 @@
+name: ticketrush
+
+services:
+  mysql:
+    image: mysql:8.0
+    command: ["--default-time-zone=+00:00"]
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      EVENT_DB_PASSWORD: ${EVENT_DB_PASSWORD}
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./infra/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # 127.0.0.1 (TCP) only answers once init has finished and the real server is up
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    mem_limit: 768m
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    mem_limit: 128m
+
+  kafka:
+    image: apache/kafka:4.4.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms512m"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+    mem_limit: 1g
+
+  discovery-server:
+    build:
+      context: .
+      dockerfile: discovery-server/Dockerfile
+    ports:
+      - "127.0.0.1:8761:8761"   # dev dashboard, loopback only: Eureka accepts unauthenticated registrations
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8761/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+    mem_limit: 384m
+
+  user-service:
+    build:
+      context: .
+      dockerfile: user-service/Dockerfile
+    # no published port: reachable only through the gateway
+    environment:
+      DB_HOST: mysql
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PRIVATE_KEY_FILE: /run/keys/private/jwt-private.pem
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+    # Key FOLDERS are mounted, not single files: with a missing file, Docker Desktop would create a directory
+    # in its place on the host. With folders, a missing key just fails startup with "RSA key not found: <path>".
+    volumes:
+      - ./infra/keys/private:/run/keys/private:ro   # ONLY user-service gets the private key
+      - ./infra/keys/public:/run/keys/public:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8081/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    mem_limit: 512m
+
+  event-service:
+    build:
+      context: .
+      dockerfile: event-service/Dockerfile
+    # no published port: public reads via the gateway, holds via /internal (service tokens)
+    environment:
+      DB_HOST: mysql
+      EVENT_DB_PASSWORD: ${EVENT_DB_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE: ${EVENT_DB_POOL:-30}   # sized by load test S1 (plan 6)
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:9092
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET}
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+    volumes:
+      - ./infra/keys/public:/run/keys/public:ro   # public key only
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    mem_limit: 768m   # G1 + the S1 spike (plan 6)
+
+  booking-service:
+    build:
+      context: .
+      dockerfile: booking-service/Dockerfile
+    deploy:
+      replicas: 2          # two instances: Eureka + client-side load balancing; jobs split work with SKIP LOCKED
+    # no published ports
+    environment:
+      DB_HOST: mysql
+      BOOKING_DB_PASSWORD: ${BOOKING_DB_PASSWORD}
+      SPRING_DATASOURCE_HIKARI_MAXIMUMPOOLSIZE: ${BOOKING_DB_POOL:-30}   # per replica; sized by load test S1 (plan 6)
+      TICKETRUSH_BOOKING_HOLDSECONDS: ${BOOKING_HOLD_SECONDS:-600}   # load test S3 uses 60
+      REDIS_HOST: redis
+      KAFKA_BOOTSTRAP: kafka:9092
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET}
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+    volumes:
+      - ./infra/keys/public:/run/keys/public:ro   # public key only
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      event-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8083/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    mem_limit: 768m   # G1 + the S1 spike (plan 6)
+
+  fake-payment-provider:
+    build:
+      context: .
+      dockerfile: fake-payment-provider/Dockerfile
+    # external PSP stub (spec §5, A6): not in Eureka, no DB, no published port
+    environment:
+      PROVIDER_DECLINE_RATE: ${PROVIDER_DECLINE_RATE:-0.0}
+      PROVIDER_LATENCY_MS: ${PROVIDER_LATENCY_MS:-0}
+      PROVIDER_TIMEOUT_AFTER_CHARGE_RATE: ${PROVIDER_TIMEOUT_AFTER_CHARGE_RATE:-0.0}
+      PROVIDER_TIMEOUT_SLEEP_MS: ${PROVIDER_TIMEOUT_SLEEP_MS:-5000}
+      PROVIDER_DOWN: ${PROVIDER_DOWN:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8090/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+    mem_limit: 256m
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    # no published port
+    environment:
+      DB_HOST: mysql
+      PAYMENT_DB_PASSWORD: ${PAYMENT_DB_PASSWORD}
+      KAFKA_BOOTSTRAP: kafka:9092
+      INTERNAL_JWT_SECRET: ${INTERNAL_JWT_SECRET}
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+      PAYMENT_PROVIDER_URL: http://fake-payment-provider:8090
+    volumes:
+      - ./infra/keys/public:/run/keys/public:ro   # public key only
+    depends_on:
+      mysql:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+      fake-payment-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8085/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    mem_limit: 512m
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"   # loopback only; change to "8080:8080" to expose the gateway on the LAN
+    environment:
+      REDIS_HOST: redis
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+    volumes:
+      - ./infra/keys/public:/run/keys/public:ro   # public key folder ONLY: the gateway can verify, never sign
+    depends_on:
+      redis:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 30s
+    mem_limit: 768m   # G1 + the S1 spike (plan 6)
+
+  qdrant:
+    image: qdrant/qdrant:v1.18.0          # matches io.qdrant:client 1.18 (plan 7, U2)
+    # not published: only ai-assistant talks to it (gRPC 6334)
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    mem_limit: 512m
+
+  ai-assistant:
+    build:
+      context: .
+      dockerfile: ai-assistant/Dockerfile
+    # read-only supporting service (spec §24): no DB, no Kafka, no internal secret, public key only
+    environment:
+      QDRANT_HOST: qdrant
+      EUREKA_URL: http://discovery-server:8761/eureka/
+      JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-not-configured}   # empty -> answers 503 ASSISTANT_UNAVAILABLE
+    volumes:
+      - ./infra/keys/public:/run/keys/public:ro
+      - assistant_models:/models                                # ONNX model + CPU libtorch, downloaded once
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      discovery-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:8086/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 120s                 # first start downloads the embedding model
+    mem_limit: 1g
+
+volumes:
+  mysql_data:
+  qdrant_data:
+  assistant_models:

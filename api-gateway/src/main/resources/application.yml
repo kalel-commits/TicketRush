@@ -1,0 +1,82 @@
+server:
+  port: 8080
+  # never derive the client address from X-Forwarded-For (rate-limit keys use the socket address)
+  forward-headers-strategy: none
+
+spring:
+  application:
+    name: api-gateway
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: 6379
+  cloud:
+    gateway:
+      server:
+        webflux:
+          routes:
+            # write routes first: first match wins
+            - id: bookings-write
+              uri: ${ticketrush.routes.booking-uri:lb://booking-service}
+              predicates: [ "Path=/api/bookings/**", "Method=POST" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@strictLimiter}", key-resolver: "#{@strictKeyResolver}" }
+            - id: payments-write
+              uri: ${ticketrush.routes.payment-uri:lb://payment-service}
+              predicates: [ "Path=/api/payments/**", "Method=POST" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@strictLimiter}", key-resolver: "#{@strictKeyResolver}" }
+            - id: bookings
+              uri: ${ticketrush.routes.booking-uri:lb://booking-service}
+              predicates: [ "Path=/api/bookings/**" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@defaultLimiter}", key-resolver: "#{@defaultKeyResolver}" }
+            - id: payments
+              uri: ${ticketrush.routes.payment-uri:lb://payment-service}
+              predicates: [ "Path=/api/payments/**" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@defaultLimiter}", key-resolver: "#{@defaultKeyResolver}" }
+            - id: events
+              uri: ${ticketrush.routes.event-uri:lb://event-service}
+              predicates: [ "Path=/api/events/**" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@defaultLimiter}", key-resolver: "#{@defaultKeyResolver}" }
+            - id: users
+              uri: ${ticketrush.routes.user-uri:lb://user-service}
+              predicates: [ "Path=/api/users/**" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@defaultLimiter}", key-resolver: "#{@defaultKeyResolver}" }
+            - id: assistant
+              uri: ${ticketrush.routes.assistant-uri:lb://ai-assistant}
+              predicates: [ "Path=/api/assistant/**" ]
+              filters:
+                - name: RequestRateLimiter
+                  args: { rate-limiter: "#{@assistantLimiter}", key-resolver: "#{@assistantKeyResolver}" }
+            # no route for /internal/** - and security denies it anyway
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://localhost:8761/eureka/}
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+ticketrush:
+  jwt:
+    public-key: file:${JWT_PUBLIC_KEY_FILE:./infra/keys/public/jwt-public.pem}
+  ratelimit:
+    strict: { replenish-rate: 2, burst-capacity: 5, requested-tokens: 1 }
+    default: { replenish-rate: 20, burst-capacity: 40, requested-tokens: 1 }
+    assistant: { replenish-rate: 1, burst-capacity: 60, requested-tokens: 6 }

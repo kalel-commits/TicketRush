@@ -1,0 +1,9 @@
+**/target/
+.git/
+.idea/
+.env
+infra/keys/
+graphify-out/
+.superpowers/
+frontend/node_modules/
+docs/
