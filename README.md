@@ -70,7 +70,7 @@ Testcontainers suite at the same time can run out of native memory (it was obser
   - On Docker Desktop, all host traffic arrives from one NAT address, so anonymous callers (login/register) share one bucket. Load tests should log users in before the measured phase.
 - Each service has its own MySQL user, granted only on its own schema. `infra/verify-infra.sh` proves this.
 
-## Load test results (plan 6)
+## Load test results
 
 The tooling is in `load/` (see `load/README.md`): k6 0.54 in Docker against the full Compose stack, then the
 spec §16.4 invariant script plus the payment reconciliation report. All numbers below were **measured on one laptop**
@@ -125,7 +125,7 @@ The cause was measured:
 Not done (each changes the spec): a bulkhead that stops seat-map reads from starving holds, or a ~1 s seat-map
 cache.
 
-## AI assistant (plan 7)
+## AI assistant
 
 `ai-assistant` (port 8086, not published; `/api/assistant/**` via the gateway) answers questions about events,
 bookings, payments and policies. It uses **RAG** over `ai-assistant/src/main/resources/knowledge/*.md` and **four
@@ -169,9 +169,9 @@ question -> embed (ONNX all-MiniLM-L6-v2, in-process) -> Qdrant top-4 (similarit
   model. Measured scores: on-topic best hits 0.50–0.77, off-topic ≤ 0.11. The threshold is 0.35. Re-check it with the
   eval.
 
-## Demo frontend (plan 8)
+## Demo frontend
 
-`frontend/` is a React 18 + Vite + TypeScript client of the public API through the gateway. Plan 8 made two small
+`frontend/` is a React 18 + Vite + TypeScript client of the public API through the gateway. The frontend work made two small
 backend changes: the gateway's CORS now also exposes `Retry-After` (so a 429 can disable Hold for that long), and
 the assistant's stream `error` event carries the same `fallbackExcerpts` as its 503. The design follows spec §23.3 (the UI UX Pro Max "operations
 console"): dark tokens, Fira Sans + Fira Code, and seat and status states shown as icon + text, never colour alone.
@@ -197,7 +197,7 @@ npx playwright test      # smoke against the running stack (see e2e/smoke.spec.t
 **Token storage:** the JWT is kept in memory plus `sessionStorage` (demo scope). An httpOnly cookie would resist
 XSS better but needs backend changes.
 
-## Live flash-sale demo (plan 9)
+## Live flash-sale demo
 
 `http://localhost:5173/demo/flash-sale` (dev server only) proves the core guarantee on the running stack:
 
@@ -220,7 +220,7 @@ There were still zero double bookings.
 
 ## Version decision
 
-Verified on 2026-11-01 with a compatibility probe (plan 1, Task 1). It checked Resilience4j auto-config,
+Verified on 2026-11-01 with a compatibility probe (foundation phase, Task 1). It checked Resilience4j auto-config,
 springdoc `/v3/api-docs`, the Spring Cloud context and a Testcontainers 2 MySQL container: 4/4 passed,
 resolving `spring-boot` 4.1.2 and `spring-cloud-commons` 5.0.4. No fallback to Boot 3.5 was needed.
 
