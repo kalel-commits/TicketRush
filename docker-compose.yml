@@ -267,7 +267,8 @@ services:
       QDRANT_HOST: qdrant
       EUREKA_URL: http://discovery-server:8761/eureka/
       JWT_PUBLIC_KEY_FILE: /run/keys/public/jwt-public.pem
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-not-configured}   # empty -> answers 503 ASSISTANT_UNAVAILABLE
+      GROQ_API_KEY: ${GROQ_API_KEY:-not-configured}             # empty -> answers 503 ASSISTANT_UNAVAILABLE
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
     volumes:
       - ./infra/keys/public:/run/keys/public:ro
       - assistant_models:/models                                # ONNX model + CPU libtorch, downloaded once

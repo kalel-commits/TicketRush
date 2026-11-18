@@ -45,7 +45,7 @@ class AssistantFailureIT extends AssistantTestBase {
 
     @Test
     void refusalBecomesTheFixedPoliteMessage() throws Exception {
-        claude.willStopWith("", "refusal");
+        claude.willStopWith("", "content_filter");
         ask("How many seats can I book?").andExpect(status().isOk())
                 .andExpect(jsonPath("$.answer").value(AiConfig.REFUSAL_MESSAGE))
                 .andExpect(jsonPath("$.grounded").value(false));
@@ -53,7 +53,7 @@ class AssistantFailureIT extends AssistantTestBase {
 
     @Test
     void maxTokensMarksTheAnswerTruncated() throws Exception {
-        claude.willStopWith("You can book up to four seats and", "max_tokens");
+        claude.willStopWith("You can book up to four seats and", "length");
         ask("How many seats can I book?").andExpect(status().isOk())
                 .andExpect(jsonPath("$.answer").value("You can book up to four seats and (truncated)"));
     }

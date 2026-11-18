@@ -23,14 +23,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Opt-in probe against the REAL Claude API (plan 7 Task 1 Step 4): the configured options (model, effort, caching,
+ * Opt-in probe against the REAL Groq API (plan 7 Task 1 Step 4): the configured options (model,
  * max tokens, no sampling parameters) are accepted, and the streaming path works end to end. Run with
- * ./mvnw -pl ai-assistant -am verify -Peval -Dit.test=ClaudeLiveProbeIT and ANTHROPIC_API_KEY set.
+ * ./mvnw -pl ai-assistant -am verify -Peval -Dit.test=GroqLiveProbeIT and GROQ_API_KEY set.
  */
 @EnabledIfSystemProperty(named = "ticketrush.eval", matches = "true")
-@EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "GROQ_API_KEY", matches = ".+")
 @SpringBootTest(properties = {"eureka.client.enabled=false", "ticketrush.ai.ingest-on-startup=false"})
-class ClaudeLiveProbeIT {
+class GroqLiveProbeIT {
 
     static final QdrantContainer QDRANT = new QdrantContainer("qdrant/qdrant:v1.18.0");
     static final Path PUB;
@@ -50,7 +50,7 @@ class ClaudeLiveProbeIT {
         r.add("ticketrush.jwt.public-key", () -> "file:" + PUB.toAbsolutePath());
         r.add("spring.ai.vectorstore.qdrant.host", QDRANT::getHost);
         r.add("spring.ai.vectorstore.qdrant.port", () -> QDRANT.getMappedPort(6334));
-        r.add("spring.ai.anthropic.api-key", () -> System.getenv("ANTHROPIC_API_KEY"));
+        r.add("spring.ai.openai.api-key", () -> System.getenv("GROQ_API_KEY"));
         r.add("spring.ai.embedding.transformer.cache.directory", () -> System.getProperty("user.home") + "/.ticketrush/onnx-cache");
     }
 

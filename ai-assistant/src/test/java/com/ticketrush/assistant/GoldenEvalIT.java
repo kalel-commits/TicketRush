@@ -25,12 +25,12 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Opt-in eval against the REAL Claude model (spec §24.10): ./mvnw -pl ai-assistant -am verify -Peval with
- * ANTHROPIC_API_KEY set. Never part of the normal build. Writes target/eval-report.json.
+ * Opt-in eval against the REAL Groq model (spec §24.10): ./mvnw -pl ai-assistant -am verify -Peval with
+ * GROQ_API_KEY set. Never part of the normal build. Writes target/eval-report.json.
  * Personal items need tool access to running event/booking services and are reported, not gated, here.
  */
 @EnabledIfSystemProperty(named = "ticketrush.eval", matches = "true")
-@EnabledIfEnvironmentVariable(named = "ANTHROPIC_API_KEY", matches = ".+")
+@EnabledIfEnvironmentVariable(named = "GROQ_API_KEY", matches = ".+")
 @SpringBootTest(properties = {"eureka.client.enabled=false", "ticketrush.ai.ingest-on-startup=false"})
 class GoldenEvalIT {
 
@@ -53,7 +53,7 @@ class GoldenEvalIT {
         r.add("ticketrush.jwt.public-key", () -> "file:" + PUB.toAbsolutePath());
         r.add("spring.ai.vectorstore.qdrant.host", QDRANT::getHost);
         r.add("spring.ai.vectorstore.qdrant.port", () -> QDRANT.getMappedPort(6334));
-        r.add("spring.ai.anthropic.api-key", () -> System.getenv("ANTHROPIC_API_KEY"));
+        r.add("spring.ai.openai.api-key", () -> System.getenv("GROQ_API_KEY"));
         r.add("spring.ai.embedding.transformer.cache.directory", () -> System.getProperty("user.home") + "/.ticketrush/onnx-cache");
     }
 

@@ -47,7 +47,7 @@ class ClientDisconnectTest {
                 .thenAnswer(inv -> Flux.just(new ChatResponse(List.of(new Generation(new AssistantMessage("Ten minutes."))))));
         CircuitBreakerRegistry breakers = CircuitBreakerRegistry.ofDefaults();
         var service = new ChatService(model, store, DefaultToolCallingManager.builder().build(), List.of(),
-                new AiProperties("claude-opus-5-5", 8192, "low", 4, 0.35, "kb-1", false), new SimpleMeterRegistry(),
+                new AiProperties("openai/gpt-oss-120b", 8192, 4, 0.35, "kb-1", false), new SimpleMeterRegistry(),
                 breakers, new ClassPathResource("prompts/system-prompt.st"));
 
         for (int i = 0; i < 10; i++) {

@@ -11,7 +11,6 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.SystemMessage;
@@ -23,6 +22,7 @@ import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.ai.model.tool.ToolExecutionResult;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -44,8 +44,8 @@ import java.util.Map;
 
 /**
  * Spec §24.4 chat pipeline: retrieve (top-k, threshold) -> short-circuit when nothing relevant and no context ids
- * (no model call, no cost) -> prompt = static system prompt, history, then context-as-data + question -> Claude with
- * the read-only tools. Spring AI 2.0's AnthropicChatModel does not execute tools itself, so this class runs the
+ * (no model call, no cost) -> prompt = static system prompt, history, then context-as-data + question -> Groq with
+ * the read-only tools. Spring AI 2.0's OpenAiChatModel does not execute tools itself, so this class runs the
  * tool loop (max 3 rounds) with the caller's token in the ToolContext (never in the prompt).
  */
 @Service
@@ -155,7 +155,7 @@ public class ChatService {
             messages.add("user".equals(h.role()) ? new UserMessage(h.content()) : new AssistantMessage(h.content()));
         }
         messages.add(new UserMessage(contextBlock(documents) + idsBlock(request) + "<question>\n" + request.message() + "\n</question>"));
-        AnthropicChatOptions options = AiConfig.chatOptions(properties, tools, Map.of(TOOL_CONTEXT_AUTHORIZATION, authorization));
+        OpenAiChatOptions options = AiConfig.chatOptions(properties, tools, Map.of(TOOL_CONTEXT_AUTHORIZATION, authorization));
         return new Prepared(new Prompt(messages, options), documents, false);
     }
 
@@ -191,7 +191,7 @@ public class ChatService {
         }
         count(in, out);
         String answer = response.hasToolCalls() ? TOOL_LIMIT_ANSWER : finalText(response);
-        boolean refused = "refusal".equals(finishReason(response));
+        boolean refused = isRefusal(finishReason(response));
         return new AssistantReply(answer, !refused && !prepared.documents().isEmpty(), refused ? List.of() : sources(prepared.documents()),
                 List.copyOf(toolsUsed), SuggestedActions.from(toolResults), new Usage(in, out));
     }
@@ -272,9 +272,9 @@ public class ChatService {
                 toolResults.addAll(ToolResult.from(asked, executed));
                 prompt = new Prompt(executed.conversationHistory(), prompt.getOptions());
             }
-            boolean refused = "refusal".equals(finish);
+            boolean refused = isRefusal(finish);
             if (refused) send(emitter, "delta", Map.of("text", AiConfig.REFUSAL_MESSAGE));
-            if ("max_tokens".equals(finish)) send(emitter, "delta", Map.of("text", " (truncated)"));
+            if (isTruncated(finish)) send(emitter, "delta", Map.of("text", " (truncated)"));
             send(emitter, "meta", Map.of("sources", refused ? List.of() : sources(prepared.documents()),
                     "suggestedActions", SuggestedActions.from(toolResults), "grounded", !refused && !prepared.documents().isEmpty()));
             count(streamedIn, streamedOut);
@@ -314,10 +314,20 @@ public class ChatService {
 
     static String finalText(ChatResponse response) {
         String reason = finishReason(response);
-        if ("refusal".equals(reason)) return AiConfig.REFUSAL_MESSAGE;
+        if (isRefusal(reason)) return AiConfig.REFUSAL_MESSAGE;
         String text = response.getResult().getOutput().getText();
         text = text == null ? "" : text.strip();
-        return "max_tokens".equals(reason) ? text + " (truncated)" : text;
+        return isTruncated(reason) ? text + " (truncated)" : text;
+    }
+
+    /** OpenAI-compatible APIs (Groq) stop with "content_filter"; "refusal" is kept for other providers. */
+    public static boolean isRefusal(String reason) {
+        return "content_filter".equals(reason) || "refusal".equals(reason);
+    }
+
+    /** OpenAI-compatible APIs (Groq) stop with "length" at the token cap; "max_tokens" is kept for other providers. */
+    public static boolean isTruncated(String reason) {
+        return "length".equals(reason) || "max_tokens".equals(reason);
     }
 
     static String finishReason(ChatResponse response) {
