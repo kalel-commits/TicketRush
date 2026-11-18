@@ -63,7 +63,8 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>
-            <artifactId>spring-ai-starter-model-anthropic</artifactId>
+            <artifactId>spring-ai-starter-model-openai</artifactId>   <!-- xAI Grok via its OpenAI-compatible API -->
+
         </dependency>
         <dependency>
             <groupId>org.springframework.ai</groupId>

@@ -33,7 +33,7 @@ class VectorStoreDownTest {
         when(store.similaritySearch(any(SearchRequest.class))).thenThrow(new RuntimeException("UNAVAILABLE: io exception"));
         ChatModel model = mock(ChatModel.class);
         var service = new ChatService(model, store, DefaultToolCallingManager.builder().build(), List.of(),
-                new AiProperties("claude-opus-5-5", 8192, "low", 4, 0.55, "kb-1", false), new SimpleMeterRegistry(),
+                new AiProperties("openai/gpt-oss-120b", 8192, 4, 0.55, "kb-1", false), new SimpleMeterRegistry(),
                 CircuitBreakerRegistry.ofDefaults(), new ClassPathResource("prompts/system-prompt.st"));
 
         assertThatThrownBy(() -> service.chat(new ChatRequest("How many seats can I book?", null, null), "Bearer x"))

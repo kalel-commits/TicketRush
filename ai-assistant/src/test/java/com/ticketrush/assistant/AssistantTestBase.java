@@ -24,7 +24,7 @@ import static com.ticketrush.common.support.TestJwts.validUserClaims;
 /** Real Qdrant (Testcontainers) + real ONNX embeddings + fake Claude. One Spring context for all ITs. */
 @SpringBootTest(properties = {
         "eureka.client.enabled=false",
-        "spring.ai.model.chat=none",                  // no Anthropic client in tests: the RecordingChatModel answers
+        "spring.ai.model.chat=none",                  // no Groq client in tests: the RecordingChatModel answers
         "ticketrush.ai.ingest-on-startup=false"})     // tests ingest explicitly
 @AutoConfigureMockMvc
 @org.springframework.context.annotation.Import(AssistantTestBase.FakeClaude.class)   // nested configs of a superclass are not auto-detected

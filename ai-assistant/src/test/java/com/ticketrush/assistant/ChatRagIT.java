@@ -3,7 +3,7 @@ package com.ticketrush.assistant;
 import com.ticketrush.assistant.kb.KnowledgeIngestionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.MessageType;
 import org.springframework.ai.chat.prompt.Prompt;
@@ -82,8 +82,8 @@ class ChatRagIT extends AssistantTestBase {
     @Test
     void requestCarriesTheSpecModelSettingsAndNoSamplingParameters() throws Exception {
         chat("{\"message\":\"How many seats can I book?\"}").andExpect(status().isOk());
-        var options = (AnthropicChatOptions) claude.prompts().getFirst().getOptions();
-        assertThat(options.getModel()).isEqualTo("claude-opus-5-5");
+        var options = (OpenAiChatOptions) claude.prompts().getFirst().getOptions();
+        assertThat(options.getModel()).isEqualTo(System.getenv().getOrDefault("GROQ_MODEL", "openai/gpt-oss-120b"));
         assertThat(options.getMaxTokens()).isEqualTo(8192);
         assertThat(options.getTemperature()).isNull();
         assertThat(options.getTopP()).isNull();

@@ -3,7 +3,7 @@
 Flash-sale event ticketing: Java 21 + Spring Boot microservices that never sell a seat twice.
 Design: `docs/superpowers/specs/2026-11-01-ticketrush-design.md` · Plans: `docs/superpowers/plans/`.
 
-**Status:** Plans 1–9 are done: foundation, event, booking and payment services, reliability jobs, load tests, the AI assistant, the demo frontend, and the live flash-sale demo. Still open: the real-key assistant eval (needs `ANTHROPIC_API_KEY`) and load scenarios S4 and S5 (need more host memory). See the sections below for details.
+**Status:** Plans 1–9 are done: foundation, event, booking and payment services, reliability jobs, load tests, the AI assistant, the demo frontend, and the live flash-sale demo. Still open: load scenarios S4 and S5 (need more host memory). See the sections below for details.
 
 **Services:** `api-gateway` · `discovery-server` (Eureka) · `user-service` · `event-service` · `booking-service` · `payment-service` (with `fake-payment-provider`) · `ai-assistant` · `frontend` (React client). Shared code lives in `common/`.
 
@@ -129,13 +129,13 @@ cache.
 
 `ai-assistant` (port 8086, not published; `/api/assistant/**` via the gateway) answers questions about events,
 bookings, payments and policies. It uses **RAG** over `ai-assistant/src/main/resources/knowledge/*.md` and **four
-read-only tools**, and Claude (`claude-opus-5-5`, effort `low`, 8,192 max tokens) writes the answers.
+read-only tools**, and Groq (`GROQ_MODEL`, default `openai/gpt-oss-120b`, 8,192 max tokens, via the OpenAI-compatible API at `api.groq.com/openai/v1`) writes the answers.
 
 ```
 question -> embed (ONNX all-MiniLM-L6-v2, in-process) -> Qdrant top-4 (similarity >= 0.35)
          -> nothing relevant and no page context? fixed "couldn't find" answer, no model call, no cost
-         -> prompt: static system prompt (cached) | history | <context> excerpts as data </context> + question
-         -> Claude, up to 3 tool rounds: getEventDetails, listUpcomingEvents, getMyBookings, getBookingDetails
+         -> prompt: static system prompt (first and unchanged) | history | <context> excerpts as data </context> + question
+         -> Groq, up to 3 tool rounds: getEventDetails, listUpcomingEvents, getMyBookings, getBookingDetails
             (GET-only, allow-listed paths, the caller's own JWT relayed, results trimmed)
          -> answer + sources + suggested links (built from tool results only)
 ```
@@ -147,24 +147,24 @@ question -> embed (ONNX all-MiniLM-L6-v2, in-process) -> Qdrant top-4 (similarit
   then `done`, or `error`), and `POST /api/assistant/admin/reindex` (ADMIN). Limits: message ≤ 1,000 characters,
   history ≤ 6 items, and 10 requests per minute per user at the gateway.
 - **Degradation:**
-  - Claude down → 503 `ASSISTANT_UNAVAILABLE`, with up to 3 relevant policy excerpts;
+  - Groq down → 503 `ASSISTANT_UNAVAILABLE`, with up to 3 relevant policy excerpts;
   - Qdrant down → 503, and health reports DOWN;
-  - a refusal → a fixed polite message;
-  - a `max_tokens` stop → the answer ends with "(truncated)";
+  - a refusal or `content_filter` stop → a fixed polite message;
+  - a `length` (token cap) stop → the answer ends with "(truncated)";
   - a circuit breaker opens after repeated failures.
 - **Setup:**
-  - Put `ANTHROPIC_API_KEY=...` in `.env`. Without it the assistant still starts: off-topic questions are answered,
+  - Put `GROQ_API_KEY=...` (and optionally `GROQ_MODEL=...`) in `.env`. Without it the assistant still starts: off-topic questions are answered,
     and anything that needs the model returns 503 with the relevant excerpts.
   - The first start downloads the embedding model and the CPU PyTorch runtime (about 350 MB) into the
     `assistant_models` volume. `PYTORCH_FLAVOR=cpu` stops DJL from fetching multi-GB CUDA builds on GPU machines.
-- **Data handling (A14):** the caller's own booking data (statuses, seats, amounts) can be sent to the Anthropic API
+- **Data handling (A14):** the caller's own booking data (statuses, seats, amounts) can be sent to the Groq API
   to answer their question. Emails, passwords and payment-provider references never are.
 - **Tests:**
   - `./mvnw -pl ai-assistant -am verify` runs 36 tests against a real Qdrant, with real embeddings and a fake
-    Claude, so it never calls the API;
+    model, so it never calls the API;
   - `bash infra/smoke/assistant-smoke.sh` (or `.ps1`) tests the assistant through the gateway;
   - `./mvnw -pl ai-assistant -am verify -Peval` with a real key runs the 25-question golden eval and writes
-    `target/eval-report.json`. **It has not been run yet**, because there is no key in this environment.
+    `target/eval-report.json`. Last run (2026-11-18, `openai/gpt-oss-120b` on Groq): policy 15/15, action refusals 5/5, about 23.6k input and 4.5k output tokens. The 5 personal questions need running event/booking services, so they are reported, not gated.
 - **Tuning note:** the spec's starting similarity threshold of 0.55 rejected correct matches with this embedding
   model. Measured scores: on-topic best hits 0.50–0.77, off-topic ≤ 0.11. The threshold is 0.35. Re-check it with the
   eval.

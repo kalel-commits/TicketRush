@@ -1,13 +1,10 @@
 package com.ticketrush.assistant.config;
 
-import com.anthropic.models.messages.OutputConfig;
-import org.springframework.ai.anthropic.AnthropicCacheOptions;
-import org.springframework.ai.anthropic.AnthropicCacheStrategy;
-import org.springframework.ai.anthropic.AnthropicChatOptions;
 import org.springframework.ai.model.tool.DefaultToolCallingManager;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import com.ticketrush.assistant.tools.BookingTools;
 import com.ticketrush.assistant.tools.EventTools;
+import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.ai.tool.ToolCallback;
 import org.springframework.context.annotation.Bean;
@@ -17,9 +14,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Claude settings, spec §24.6 (U1 resolved for Spring AI 2.0.2): model + 8,192 max tokens, effort "low",
- * prompt caching for the static system prompt and tools, and no sampling parameters. Spring AI does not expose the
- * beta "fallbacks" parameter, so refusals are answered client-side with {@link #REFUSAL_MESSAGE}.
+ * Model settings for Groq, called through its OpenAI-compatible API (base URL in application.yml): model + max
+ * tokens, and no sampling parameters. The static system prompt stays first and unchanged, so a provider-side prefix
+ * cache can reuse it without a cache option. Refusals and content-filter stops are answered client-side with
+ * {@link #REFUSAL_MESSAGE}.
  */
 @Configuration
 public class AiConfig {
@@ -27,24 +25,24 @@ public class AiConfig {
     public static final String REFUSAL_MESSAGE =
             "Sorry, I can't help with that. I can answer questions about TicketRush events, bookings, payments and policies.";
 
-    public static AnthropicChatOptions chatOptions(AiProperties p) {
+    public static OpenAiChatOptions chatOptions(AiProperties p) {
         return chatOptions(p, List.of(), Map.of());
     }
 
-    /** Per-request options: the spec settings plus the read-only tools and the caller's token as tool context. */
-    public static AnthropicChatOptions chatOptions(AiProperties p, List<ToolCallback> tools, Map<String, Object> toolContext) {
-        return AnthropicChatOptions.builder()
+    /** Per-request options: the model settings plus the read-only tools and the caller's token as tool context. */
+    public static OpenAiChatOptions chatOptions(AiProperties p, List<ToolCallback> tools, Map<String, Object> toolContext) {
+        return OpenAiChatOptions.builder()
                 .model(p.model())
                 .maxTokens(p.maxTokens())
-                .effort(OutputConfig.Effort.of(p.effort()))
-                .cacheOptions(AnthropicCacheOptions.builder().strategy(AnthropicCacheStrategy.SYSTEM_AND_TOOLS).build())
+                // Groq rejects assistant turns carrying 'reasoning_content' (400 on the round after a tool call)
+                .replayReasoningContent(false)
                 .toolCallbacks(tools)
                 .toolContext(toolContext)
                 .build();
     }
 
     @Bean
-    AnthropicChatOptions assistantChatOptions(AiProperties properties) {
+    OpenAiChatOptions assistantChatOptions(AiProperties properties) {
         return chatOptions(properties);
     }
 
@@ -54,7 +52,7 @@ public class AiConfig {
         return List.of(ToolCallbacks.from(eventTools, bookingTools));
     }
 
-    /** Spring AI 2.0's AnthropicChatModel does not run tools itself; ChatService drives this loop (max 3 rounds). */
+    /** Spring AI 2.0's OpenAiChatModel does not run tools itself; ChatService drives this loop (max 3 rounds). */
     @Bean
     ToolCallingManager toolCallingManager() {
         return DefaultToolCallingManager.builder().build();
